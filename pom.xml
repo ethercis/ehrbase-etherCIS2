@@ -20,7 +20,7 @@
   <packaging>pom</packaging>
   <groupId>org.ehrbase.openehr</groupId>
   <artifactId>server</artifactId>
-  <version>0.9.0</version>
+  <version>0.10.0</version>
 
   <name>${project.groupId}:${project.artifactId}</name>
   <description>EHRbase is a Free, Libre, Open Source openEHR Clinical Data Repository</description>
@@ -146,6 +146,7 @@
     <module>test-data</module>
     <module>opt</module>
     <module>validation</module>
+    <module>terminology</module>
   </modules>
 
 
@@ -190,6 +191,16 @@
       <dependency>
         <groupId>org.ehrbase.openehr</groupId>
         <artifactId>serialisation</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.ehrbase.openehr</groupId>
+        <artifactId>validation</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.ehrbase.openehr</groupId>
+        <artifactId>terminology</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
@@ -484,37 +495,6 @@
           <additionalJOption>-Xdoclint:none</additionalJOption>
         </configuration>
       </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-gpg-plugin</artifactId>
-        <version>1.5</version>
-        <executions>
-          <execution>
-            <id>sign-artifacts</id>
-            <phase>verify</phase>
-            <goals>
-              <goal>sign</goal>
-            </goals>
-            <configuration>
-              <gpgArguments>
-                <arg>--pinentry-mode</arg>
-                <arg>loopback</arg>
-              </gpgArguments>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.sonatype.plugins</groupId>
-        <artifactId>nexus-staging-maven-plugin</artifactId>
-        <version>1.6.7</version>
-        <extensions>true</extensions>
-        <configuration>
-          <serverId>ossrh</serverId>
-          <nexusUrl>https://oss.sonatype.org/</nexusUrl>
-          <autoReleaseAfterClose>false</autoReleaseAfterClose>
-        </configuration>
-      </plugin>
     </plugins>
 
     <pluginManagement>
@@ -659,4 +639,51 @@
       </plugins>
     </pluginManagement>
   </build>
+
+  <profiles>
+    <profile>
+      <id>ossrh</id>
+      <properties>
+        <gpg.keyname>FAB0BE712374BFC3D26DA5B43A7041C227272DD8</gpg.keyname>
+        <gpg.executable>gpg2</gpg.executable>
+        <gpg.passphrase>${env.GPG_PASSPHRASE}</gpg.passphrase>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>1.5</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+                <configuration>
+                  <gpgArguments>
+                    <arg>--pinentry-mode</arg>
+                    <arg>loopback</arg>
+                  </gpgArguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.plugins</groupId>
+            <artifactId>nexus-staging-maven-plugin</artifactId>
+            <version>1.6.7</version>
+            <extensions>true</extensions>
+            <configuration>
+              <serverId>ossrh</serverId>
+              <nexusUrl>https://oss.sonatype.org/</nexusUrl>
+              <autoReleaseAfterClose>false</autoReleaseAfterClose>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
 </project>
