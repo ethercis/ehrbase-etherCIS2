@@ -42,6 +42,7 @@ import org.ehrbase.api.service.ContributionService;
 import org.ehrbase.api.service.EhrService;
 import org.ehrbase.dao.access.interfaces.*;
 import org.ehrbase.dao.access.jooq.AuditDetailsAccess;
+import org.ehrbase.dao.access.jooq.party.PersistedPartyProxy;
 import org.jooq.DSLContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -110,7 +111,7 @@ public class ContributionServiceImp extends BaseService implements ContributionS
         return Optional.of(contribution);
     }
 
-    @Override   // TODO: this will need to be one transaction, as the contribution itself will be created before the object handling. revoking it if the objects are failing will be necessary - see EHR-259
+    @Override
     public UUID commitContribution(UUID ehrId, String content, CompositionFormat format) {
         //pre-step: check for valid ehrId
         if (ehrService.hasEhr(ehrId).equals(Boolean.FALSE)) {
@@ -119,9 +120,12 @@ public class ContributionServiceImp extends BaseService implements ContributionS
 
         // create new empty/standard-value contribution - will be updated later with full details
         I_ContributionAccess contributionAccess = I_ContributionAccess.getInstance(this.getDataAccess(), ehrId);
-        // commits with all default values
-        UUID contributionId = contributionAccess.commit(null, null, null, null, null, null, null);
-        List<Version> versions = ContributionServiceHelper.getVersions(content, format);
+        // parse and set audit information from input
+        AuditDetails audit = ContributionServiceHelper.parseAuditDetails(content, format);
+        contributionAccess.setAuditDetailsValues(audit);
+        // commits with all default values (but without audit handling as it is done above)
+        UUID contributionId = contributionAccess.commit(null, null, null);
+        List<Version> versions = ContributionServiceHelper.parseVersions(content, format);
 
         if (versions.isEmpty())
             throw new InvalidApiParameterException("Invalid Contribution, must have at least one Version object.");
@@ -169,6 +173,9 @@ public class ContributionServiceImp extends BaseService implements ContributionS
     private void processCompositionVersion(UUID ehrId, UUID contributionId, Version version, Composition versionRmObject) {
         // access audit and extract method, e.g. CREATION
         I_ConceptAccess.ContributionChangeType changeType = I_ConceptAccess.ContributionChangeType.valueOf(version.getCommitAudit().getChangeType().getValue().toUpperCase());
+
+        checkContributionRules(version, changeType);    // evaluate and check contribution rules
+
         switch (changeType) {
             case CREATION:
                 // call creation of a new composition with given input
@@ -180,12 +187,46 @@ public class ContributionServiceImp extends BaseService implements ContributionS
                 /*String versionUid =*/ compositionService.update(getVersionedUidFromVersion(version), versionRmObject, contributionId);
                 break;
             case DELETED:   // case of deletion change type, but request also has payload (TODO: should that be even allowed? specification-wise it's not forbidden)
-                /*LocalDateTime localDateTime =*/ compositionService.delete(getVersionedUidFromVersion(version));
+                /*LocalDateTime localDateTime =*/ compositionService.delete(getVersionedUidFromVersion(version), contributionId);
                 break;
             case SYNTHESIS:     // TODO
             case UNKNOWN:       // TODO
-            default:
+            default:    // TODO keep as long as above has TODOs. Check of valid change type is done in checkContributionRules
                 throw new UnexpectedSwitchCaseException(changeType);
+        }
+    }
+
+    /**
+     * Checks contribution rules, i.e. context-aware checks of the content. For instance, a committed version can't be
+     * of change type CREATION while containing a "preceding_version_uid".
+     *
+     * Note: Those rules are checked here, because context of the contribution might be important.
+     * Apart from that, most rules logically could be checked within the appropriate service as well.
+     * @param version Input version object
+     * @param changeType Change type of this version
+     */
+    private void checkContributionRules(Version version, I_ConceptAccess.ContributionChangeType changeType) {
+
+        switch (changeType) {
+            case CREATION:
+                // can't have change type CREATION and a given "preceding_version_uid"
+                if (version.getPrecedingVersionUid() != null)
+                    throw new InvalidApiParameterException("Invalid version. Change type CREATION, but also set \"preceding_version_uid\" attribute");
+                break;
+            case MODIFICATION:
+            case AMENDMENT:
+                // can't have change type MODIFICATION and without giving "preceding_version_uid"
+                if (version.getPrecedingVersionUid() == null)
+                    throw new InvalidApiParameterException("Invalid version. Change type MODIFICATION, but without \"preceding_version_uid\" attribute");
+                break;
+            // block of valid change types, without any rules to apply (yet)
+            case DELETED:
+            case SYNTHESIS:
+            case UNKNOWN:
+                break;
+            // invalid change type
+            default:
+                throw new InvalidApiParameterException("Change type \"" + changeType + "\" not valid");
         }
     }
 
@@ -252,9 +293,9 @@ public class ContributionServiceImp extends BaseService implements ContributionS
         Map<String, String> objRefs = new HashMap<>();
 
         // query for compositions
-        Map<UUID, I_CompositionAccess> compositions = I_CompositionAccess.retrieveInstancesInContributionVersion(this.getDataAccess(), contribution);
-        // for each fetched composition: add it to the return map and add the composition type tag - ignoring the value (the access)
-        compositions.forEach((k, v) -> objRefs.put(k.toString(), TYPE_COMPOSITION));
+        Map<I_CompositionAccess, Integer> compositions = I_CompositionAccess.retrieveInstancesInContribution(this.getDataAccess(), contribution);
+        // for each fetched composition: add it to the return map and add the composition type tag - ignoring the access obj
+        compositions.forEach((k, v) -> objRefs.put(k.getId() + "::" + getServerConfig().getNodename() + "::" + v, TYPE_COMPOSITION));
 
         // TODO query for folders
 
@@ -274,7 +315,7 @@ public class ContributionServiceImp extends BaseService implements ContributionS
         I_AuditDetailsAccess auditDetailsAccess = new AuditDetailsAccess(this.getDataAccess()).retrieveInstance(this.getDataAccess(), auditId);
 
         String systemId = auditDetailsAccess.getSystemId().toString();
-        PartyProxy committer = I_PartyIdentifiedAccess.retrievePartyIdentified(this.getDataAccess(), auditDetailsAccess.getCommitter());
+        PartyProxy committer = new PersistedPartyProxy(this.getDataAccess()).retrieve(auditDetailsAccess.getCommitter());
         DvDateTime timeCommitted = new DvDateTime(LocalDateTime.ofInstant(auditDetailsAccess.getTimeCommitted().toInstant(), ZoneId.of(auditDetailsAccess.getTimeCommittedTzId())));
         int changeTypeCode = I_ConceptAccess.ContributionChangeType.valueOf(auditDetailsAccess.getChangeType().getLiteral().toUpperCase()).getCode();
         // FIXME: what's the terminology ID of the official change type terminology?

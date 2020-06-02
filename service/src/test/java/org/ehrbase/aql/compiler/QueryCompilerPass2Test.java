@@ -192,7 +192,7 @@ public class QueryCompilerPass2Test {
 
             OrderAttribute orderAttribute = orderAttributes.get(0);
             assertThat(orderAttribute.getDirection()).isEqualTo(OrderAttribute.OrderDirection.ASC);
-            I_VariableDefinition expected = I_VariableDefinitionHelper.build("$ALIAS$", null, "date_created", false, false, false);
+            I_VariableDefinition expected = I_VariableDefinitionHelper.build(null, "date_created", null, false, false, false);
             I_VariableDefinitionHelper.checkEqualWithoutFuncParameters(orderAttribute.getVariableDefinition(), expected);
         }
     }
@@ -246,6 +246,22 @@ public class QueryCompilerPass2Test {
             walker.walk(cut, tree);
             Integer actual = cut.getOffsetAttribute();
             assertThat(actual).isEqualTo(6);
+        }
+    }
+
+    @Test
+    public void testFunction1() {
+
+        ParseTreeWalker walker = new ParseTreeWalker();
+
+        {
+            QueryCompilerPass2 cut = new QueryCompilerPass2();
+            String aql = "select count(a/context/start_time/value)  " +
+                    "from EHR e  contains COMPOSITION a[openEHR-EHR-COMPOSITION.health_summary.v1] ";
+            ParseTree tree = QueryHelper.setupParseTree(aql);
+            walker.walk(cut, tree);
+
+            I_VariableDefinition expected = I_VariableDefinitionHelper.build("context/start_time/value", null, "a", false, false, false);
         }
     }
 }

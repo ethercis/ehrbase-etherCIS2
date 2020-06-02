@@ -19,18 +19,21 @@ spring:
     active: local
   datasource:
     driver-class-name: org.postgresql.Driver
-    type: org.apache.tomcat.jdbc.pool.DataSource
-    tomcat:
-      validationQuery: /* ping */ SELECT 1
-      testOnBorrow: true
+
+  flyway:
+    schemas: ehr
+
+security:
+  authType: BASIC
+  authUser: ehrbase-user
+  authPassword: SuperSecretPassword
+
 cache:
   config: '/ehcache.xml'
   enabled: true
-flyway:
-  locations:
-    - classpath:db/migration
-    - classpath:org.ehrbase.db.migration
-  schemas: ehr
+
+system:
+  allow-template-overwrite: false
 
 logging:
   level:
@@ -39,3 +42,10 @@ logging:
     com.ethercis: DEBUG
     org.jooq: INFO
     net.sf.ehcache: TRACE
+
+
+terminology_server :
+  tsUrl: 'https://r4.ontoserver.csiro.au/fhir/'
+  codePath: '$[\"expansion\"][\"contains\"][*][\"code\"]'
+  systemPath: '$[\"expansion\"][\"contains\"][*][\"system\"]'
+  displayPath: '$[\"expansion\"][\"contains\"][*][\"display\"]'

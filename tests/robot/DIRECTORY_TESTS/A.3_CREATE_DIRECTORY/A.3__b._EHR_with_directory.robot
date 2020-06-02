@@ -36,7 +36,7 @@ Alternative flow 1: create directory on EHR with directory
 
     create DIRECTORY (JSON)    subfolders_in_directory.json
 
-    validate POST response - 201 created
+    validate POST response - 201 created directory
 
     create DIRECTORY (JSON)    subfolders_in_directory.json
 

@@ -22,15 +22,15 @@
 package org.ehrbase.dao.access.interfaces;
 
 import com.nedap.archie.rm.datastructures.ItemStructure;
+import com.nedap.archie.rm.datavalues.DvCodedText;
+import com.nedap.archie.rm.datavalues.DvText;
 import org.ehrbase.api.exception.InternalServerException;
 import org.ehrbase.api.exception.InvalidApiParameterException;
 import org.ehrbase.dao.access.jooq.EhrAccess;
 import org.ehrbase.dao.access.util.ContributionDef;
 import org.ehrbase.jooq.pg.tables.records.EhrRecord;
-import com.nedap.archie.rm.archetyped.Locatable;
 import com.nedap.archie.rm.ehr.EhrStatus;
 
-import java.sql.Timestamp;
 import java.util.Map;
 import java.util.UUID;
 
@@ -42,7 +42,7 @@ import static org.ehrbase.jooq.pg.Tables.STATUS;
  * related to the actual Ehr owner (eg. patient or Named Subject generally).
  * Created by Christian Chevalley on 4/21/2015.
  */
-public interface I_EhrAccess extends I_SimpleCRUD<I_EhrAccess, UUID> {
+public interface I_EhrAccess extends I_SimpleCRUD {
 
     String TAG_TEMPLATE_ID = "$TEMPLATE_ID$"; //used to serialize template id in json structure
 
@@ -110,13 +110,14 @@ public interface I_EhrAccess extends I_SimpleCRUD<I_EhrAccess, UUID> {
      * retrieve an Ehr for a known status entry
      *
      * @param domainAccess SQL access
+     * @param ehrId        EHR ID of current context
      * @param status       status UUID
      * @param version      optional version, will assume latest if null
      * @return UUID of corresponding Ehr or null
      * @throws IllegalArgumentException if retrieving failed for given input
      */
-    static I_EhrAccess retrieveInstanceByStatus(I_DomainAccess domainAccess, UUID status, int version) {
-        return EhrAccess.retrieveInstanceByStatus(domainAccess, status, version);
+    static I_EhrAccess retrieveInstanceByStatus(I_DomainAccess domainAccess, UUID ehrId, UUID status, int version) {
+        return EhrAccess.retrieveInstanceByStatus(domainAccess, ehrId, status, version);
     }
 
     static boolean checkExist(I_DomainAccess domainAccess, UUID partyId) {
@@ -124,7 +125,7 @@ public interface I_EhrAccess extends I_SimpleCRUD<I_EhrAccess, UUID> {
     }
 
     /**
-     * retrieve the Ehr entry from its id
+     * Retrieve the Ehr entry from its ID (incl latest STATUS).
      *
      * @param domainAccess SQL access
      * @param ehrId        the Ehr UUID
@@ -161,6 +162,14 @@ public interface I_EhrAccess extends I_SimpleCRUD<I_EhrAccess, UUID> {
     }
 
     void setModifiable(Boolean modifiable);
+
+    void setArchetypeNodeId(String archetypeNodeId);
+
+    String getArchetypeNodeId();
+
+    void setName(DvText name);
+
+    void setName(DvCodedText name);
 
     void setQueryable(Boolean queryable);
 
@@ -235,6 +244,10 @@ public interface I_EhrAccess extends I_SimpleCRUD<I_EhrAccess, UUID> {
 
     void setContributionAccess(I_ContributionAccess contributionAccess);
 
+    I_StatusAccess getStatusAccess();
+
+    void setStatusAccess(I_StatusAccess statusAccess);
+
     void setOtherDetails(ItemStructure otherDetails, String templateId);
 
     ItemStructure getOtherDetails();
@@ -248,20 +261,4 @@ public interface I_EhrAccess extends I_SimpleCRUD<I_EhrAccess, UUID> {
      * @return Latest EHR_STATUS
      */
     EhrStatus getStatus();
-
-    /**
-     * Get latest version number of EHR_STATUS by versioned object UID.
-     * @param domainAccess access
-     * @param ehrStatusId versioned object UID
-     * @return version number
-     */
-    Integer getLastVersionNumberOfStatus(I_DomainAccess domainAccess, UUID ehrStatusId);
-
-    /**
-     * Get a specific version number of the associated EHR_STATUS of this EhrAccess by timestamp.
-     * General idea behind the algorithm: 'what version was the top version at moment T?'
-     * @param time Timestamp
-     * @return version number
-     */
-    int getEhrStatusVersionFromTimeStamp(Timestamp time);
 }

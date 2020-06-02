@@ -30,9 +30,9 @@ import java.util.Map;
 public class AqlResult {
     private final Result<Record> records;
     private final List<List<String>> explain;
-    private Map<String, String> variables;
+    private Map<String, String> aqlColumns;
 
-    public AqlResult(Result<Record> records, List<List<String>> explain) {
+    AqlResult(Result<Record> records, List<List<String>> explain) {
         this.records = records;
         this.explain = explain;
     }
@@ -46,10 +46,24 @@ public class AqlResult {
     }
 
     public Map<String, String> getVariables() {
-        return variables;
+        return aqlColumns;
     }
 
     public void setVariables(Map<String, String> variables) {
-        this.variables = variables;
+        aqlColumns = variables;
+    }
+
+
+    public boolean variablesContains(String fieldName){
+        if (aqlColumns.containsKey(fieldName))
+            return true;
+
+        //else iterate on values
+        for (String value: aqlColumns.values()){
+            if (value.equals(fieldName))
+                return true;
+        }
+
+        return false;
     }
 }

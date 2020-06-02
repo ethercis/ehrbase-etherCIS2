@@ -1,138 +1,70 @@
-/*
- * Copyright (c) 2019 Stefan Spiska (Vitasystems GmbH) and Hannover Medical School.
- *
- * This file is part of project EHRbase
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package org.ehrbase.application.config;
 
-import org.keycloak.adapters.KeycloakConfigResolver;
-import org.keycloak.adapters.springboot.KeycloakSpringBootConfigResolver;
-import org.keycloak.adapters.springsecurity.KeycloakConfiguration;
-import org.keycloak.adapters.springsecurity.authentication.KeycloakAuthenticationProvider;
-import org.keycloak.adapters.springsecurity.client.KeycloakClientRequestFactory;
-import org.keycloak.adapters.springsecurity.client.KeycloakRestTemplate;
-import org.keycloak.adapters.springsecurity.config.KeycloakWebSecurityConfigurerAdapter;
-import org.keycloak.adapters.springsecurity.filter.KeycloakAuthenticationProcessingFilter;
-import org.keycloak.adapters.springsecurity.filter.KeycloakPreAuthActionsFilter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.config.ConfigurableBeanFactory;
-import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
-import org.springframework.context.annotation.Scope;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.authority.mapping.SimpleAuthorityMapper;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.authentication.session.NullAuthenticatedSessionStrategy;
-import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
-@KeycloakConfiguration
-public class SecurityConfig extends KeycloakWebSecurityConfigurerAdapter {
+import java.util.Formatter;
 
-    private final KeycloakClientRequestFactory keycloakClientRequestFactory;
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
 
-    public SecurityConfig(@SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection") KeycloakClientRequestFactory keycloakClientRequestFactory) {
-        this.keycloakClientRequestFactory = keycloakClientRequestFactory;
-
-        //to use principal and authentication together with @async
-        SecurityContextHolder.setStrategyName(SecurityContextHolder.MODE_INHERITABLETHREADLOCAL);
-
-    }
-
-    @Bean
-    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
-    public KeycloakRestTemplate keycloakRestTemplate() {
-        return new KeycloakRestTemplate(keycloakClientRequestFactory);
-    }
-
-    /**
-     * registers the Keycloakauthenticationprovider in spring context
-     * and sets its mapping strategy for roles/authorities (mapping to spring seccurities' default ROLE_... for authorities ).
-     *
-     * @param auth SecurityBuilder to build authentications and add details like authproviders etc.
-     * @throws Exception
-     */
     @Autowired
-    public void configureGlobal(AuthenticationManagerBuilder auth) {
-        KeycloakAuthenticationProvider keyCloakAuthProvider = keycloakAuthenticationProvider();
-        keyCloakAuthProvider.setGrantedAuthoritiesMapper(new SimpleAuthorityMapper());
+    private SecurityYAMLConfig securityYAMLConfig;
 
-        auth.authenticationProvider(keyCloakAuthProvider);
+    private Logger logger = LoggerFactory.getLogger(getClass());
+    private Formatter formatter = new Formatter();
+
+    @Autowired
+    public void configureGlobal(AuthenticationManagerBuilder auth) throws Exception {
+
+        auth.inMemoryAuthentication()
+                .withUser(securityYAMLConfig.getAuthUser())
+                .password(passwordEncoder().encode(securityYAMLConfig.getAuthPassword()))
+                .authorities("ROLE_USER");
     }
 
-    /**
-     * Sets keycloaks config resolver to use springs application.properties instead of keycloak.json (which is standard)
-     *
-     * @return
-     */
-    @Bean
-    @Primary
-    public KeycloakConfigResolver keyCloakConfigResolver() {
-        return new KeycloakSpringBootConfigResolver();
-    }
-
-    /**
-     * define the session auth strategy so that no session is created
-     *
-     * @return concrete implementation of session authentication strategy
-     */
-    @Bean
-    @Override
-    protected SessionAuthenticationStrategy sessionAuthenticationStrategy() {
-        return new NullAuthenticatedSessionStrategy();
-    }
-
-    /**
-     * define the actual constraints of the app.
-     *
-     * @param http
-     * @throws Exception
-     */
     @Override
     protected void configure(HttpSecurity http) throws Exception {
-        super.configure(http);
-        http.cors()
-                .and()
-                .csrf()
-                .disable()
-                .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                .sessionAuthenticationStrategy(sessionAuthenticationStrategy())
-                .and()
-                .authorizeRequests()
-                .antMatchers("/v2/api-docs", "/swagger-resources/configuration/ui", "/swagger-resources", "/swagger-resources/configuration/security", "/swagger-ui.html", "/webjars/**").permitAll()
-                //.anyRequest().authenticated()
-                .anyRequest().permitAll()
-        ;
+        switch (securityYAMLConfig.getAuthType()) {
+            case BASIC: {
+                logger.info("Using basic authentication.");
+                logger.info(formatter.format(
+                        "Username: %s Password: %s", securityYAMLConfig.getAuthUser(), securityYAMLConfig.getAuthPassword()
+                ).toString());
+                http
+                        .csrf().disable()
+                        .authorizeRequests().anyRequest().authenticated()
+                        .and()
+                        .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                        .and()
+                        .httpBasic();
+                break;
+            }
+            case NONE:
+            default: {
+                logger.warn("Authentication disabled!");
+                logger.warn("To enable security set security.authType to BASIC in yaml properties file.");
+                http
+                        .csrf().disable()
+                        .authorizeRequests().anyRequest().permitAll();
+                break;
+            }
+        }
     }
 
     @Bean
-    public FilterRegistrationBean keycloakAuthenticationProcessingFilterRegistrationBean(
-            KeycloakAuthenticationProcessingFilter filter) {
-        FilterRegistrationBean registrationBean = new FilterRegistrationBean(filter);
-        registrationBean.setEnabled(false);
-        return registrationBean;
-    }
-
-    @Bean
-    public FilterRegistrationBean keycloakPreAuthActionsFilterRegistrationBean(
-            KeycloakPreAuthActionsFilter filter) {
-        FilterRegistrationBean registrationBean = new FilterRegistrationBean(filter);
-        registrationBean.setEnabled(false);
-        return registrationBean;
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
     }
 }

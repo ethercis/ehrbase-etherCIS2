@@ -18,6 +18,7 @@
 
 package org.ehrbase.api.dto;
 
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -57,5 +58,21 @@ public class QueryResultDto {
 
     public void setVariables(Map<String, String> variables) {
         this.variables = variables;
+    }
+
+    public boolean variablesIsEmpty() {
+        return variables.size() == 0;
+    }
+
+    public boolean variablesContainsColumnId(String columnId){
+        return getVariables().containsKey(columnId);
+    }
+
+    public String variablesPath(String columnId){
+        return getVariables().get(columnId);
+    }
+
+    public Iterator<Map.Entry<String, String>> variablesIterator(){
+        return variables.entrySet().iterator();
     }
 }

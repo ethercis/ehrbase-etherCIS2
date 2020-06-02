@@ -19,6 +19,7 @@
 package org.ehrbase.api.service;
 
 import com.nedap.archie.rm.composition.Composition;
+import com.nedap.archie.rm.ehr.EhrStatus;
 
 import java.util.UUID;
 
@@ -48,6 +49,21 @@ public interface ValidationService {
      * @throws Exception if the validation fails or the template cannot be resolved
      */
     void check(String templateID, Composition composition) throws Exception;
+
+    /**
+     * initially check if the composition is valid for further processing
+     * @param composition
+     * @throws IllegalArgumentException
+     */
+    void check(Composition composition) throws Exception;
+
+    /**
+     * initially check if ehrstatus is valid for further processing
+     * @param ehrStatus
+     * @throws IllegalArgumentException
+     */
+    void check(EhrStatus ehrStatus);
+
 
     /**
      * Remove all mappings in the cache

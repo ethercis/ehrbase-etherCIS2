@@ -22,9 +22,8 @@
 
 package org.ehrbase.aql.sql.binding;
 
-import org.ehrbase.aql.definition.FuncParameter;
-import org.ehrbase.aql.definition.I_VariableDefinition;
-import org.ehrbase.aql.definition.Variables;
+import org.ehrbase.aql.compiler.OrderAttribute;
+import org.ehrbase.aql.definition.*;
 import org.ehrbase.aql.sql.queryImpl.DefaultColumnId;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -32,6 +31,7 @@ import org.jooq.SelectQuery;
 import org.jooq.impl.DSL;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -39,25 +39,38 @@ import java.util.List;
  */
 public class SuperQuery {
 
-    private List<I_VariableDefinition> variableDefinitions;
+    private VariableDefinitions variableDefinitions;
     private SelectQuery query;
     private DSLContext context;
 
-    public SuperQuery(DSLContext context, List<I_VariableDefinition> variableDefinitions, SelectQuery query) {
+    public SuperQuery(DSLContext context, VariableDefinitions variableDefinitions, SelectQuery query) {
         this.context = context;
         this.variableDefinitions = variableDefinitions;
         this.query = query;
     }
 
-    public List<Field> selectFields() {
+    @SuppressWarnings( "deprecation" )
+    private List<Field> selectFields() {
 
         List<Field> fields = new ArrayList<>();
+        Iterator<I_VariableDefinition> iterator = variableDefinitions.iterator();
 
-        for (I_VariableDefinition variableDefinition : variableDefinitions) {
-            if (variableDefinition.getAlias() == null || variableDefinition.getAlias().isEmpty())
-                fields.add(DSL.fieldByName(new DefaultColumnId().value(variableDefinition))); //CR #50
-            else
-                fields.add(DSL.fieldByName(variableDefinition.getAlias()));
+        while (iterator.hasNext()) {
+            I_VariableDefinition variableDefinition = iterator.next();
+            if (variableDefinition instanceof FunctionDefinition){
+                StringBuilder stringBuilder = new StringBuilder();
+                for (FuncParameter funcParameter: ((FunctionDefinition) variableDefinition).getParameters()){
+                    stringBuilder.append(funcParameter.getValue());
+                }
+                fields.add(DSL.fieldByName(stringBuilder.toString()));
+
+            }
+            else {
+                if (variableDefinition.getAlias() == null || variableDefinition.getAlias().isEmpty())
+                    fields.add(DSL.fieldByName(new DefaultColumnId().value(variableDefinition))); //CR #50
+                else
+                    fields.add(DSL.fieldByName(variableDefinition.getAlias()));
+            }
         }
 
         return fields;
@@ -65,9 +78,8 @@ public class SuperQuery {
 
     }
 
-    public SelectQuery selectDistinct() {
-
-        SelectQuery selectQuery = context.selectQuery();
+    @SuppressWarnings("unchecked")
+    private SelectQuery selectDistinct(SelectQuery selectQuery) {
 
         List<Field> fields = selectFields();
 
@@ -78,61 +90,85 @@ public class SuperQuery {
         return selectQuery;
     }
 
-    public SelectQuery selectAggregate() {
-
-        SelectQuery selectQuery = context.selectQuery();
+    @SuppressWarnings( {"deprecation", "unchecked"} )
+    private SelectQuery selectAggregate(SelectQuery selectQuery) {
 
         List<Field> fields = new ArrayList<>();
         List<String> skipField = new ArrayList<>();
-        for (I_VariableDefinition variableDefinition : variableDefinitions) {
+        Iterator<I_VariableDefinition> iterator = variableDefinitions.iterator();
+        boolean distinctRequired = false;
+
+        while (iterator.hasNext()) {
+            I_VariableDefinition variableDefinition = iterator.next();
             String alias = variableDefinition.getAlias() == null || variableDefinition.getAlias().isEmpty() ? variableDefinition.getPath() : variableDefinition.getAlias();
             if (variableDefinition.isFunction()) {
                 skipField.add(alias);
-                Field field = DSL.field(functionExpression(variableDefinition));
-                if (variableDefinition.getAlias() != null)
+
+                FunctionExpression functionExpression = new FunctionExpression(variableDefinitions, variableDefinition);
+
+                Field field = DSL.field(functionExpression.toString());
+
+                skipField.addAll(functionExpression.arguments());
+
+                if (variableDefinition.getAlias() != null) {
                     field = field.as(alias);
+                }
+
                 fields.add(field);
             } else if (variableDefinition.isExtension()) {
-                //do nothing... for the time being
+                //TODO:do nothing... for the time being
             } else {
                 //check if this alias is serviced by a function
+                //check if this alias requires distinct
+                distinctRequired = distinctRequired || variableDefinition.isDistinct();
+
                 if (skipField.contains(alias))
                     continue;
 
-                fields.add(DSL.fieldByName(alias));
+                if (variableDefinition.isDistinct())
+                    fields.add(DSL.fieldByName("DISTINCT "+ alias));
+                else
+                    fields.add(DSL.fieldByName(alias));
             }
         }
 
+
         selectQuery.addSelect(fields);
+
 
         selectQuery.addFrom(query);
 
         return selectQuery;
     }
 
-    private String functionExpression(I_VariableDefinition variableDefinition) {
+    @SuppressWarnings("unchecked")
+    public SelectQuery selectOrderBy(List<OrderAttribute> orderAttributes) {
 
-        StringBuffer expression = new StringBuffer();
+        SelectQuery selectQuery = context.selectQuery();
 
-        for (FuncParameter parameter : variableDefinition.getFuncParameters()) {
-            if (parameter.isVariable()) {
-                expression.append("\"");
-                expression.append(parameter.getValue());
-                expression.append("\"");
-            } else
-                expression.append(parameter.getValue());
-        }
-        return expression.toString();
+        selectQuery.addFrom(query);
+
+        selectQuery = setOrderBy(orderAttributes, selectQuery);
+
+        return selectQuery;
+    }
+
+    @SuppressWarnings("unchecked")
+    public SelectQuery setOrderBy(List<OrderAttribute> orderAttributes, SelectQuery selectQuery){
+        return new OrderByBinder(variableDefinitions, orderAttributes, selectQuery).bind();
     }
 
     public SelectQuery select() {
 
-        if (new Variables(variableDefinitions).hasDefinedDistinct()) { //build a super select
-            return selectDistinct();
-        } else if (new Variables(variableDefinitions).hasDefinedFunction()) {
-            return selectAggregate();
+        SelectQuery selectQuery = context.selectQuery();
+
+        if (new Variables(variableDefinitions).hasDefinedFunction()) {
+            selectQuery = selectAggregate(selectQuery);
+        }
+        else if (new Variables(variableDefinitions).hasDefinedDistinct()) { //build a super select
+            selectQuery = selectDistinct(selectQuery);
         }
 
-        throw new IllegalArgumentException("Don't know how to handle super query");
+        return selectQuery;
     }
 }
